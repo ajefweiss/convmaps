@@ -18,7 +18,7 @@ import time
 from util import d_c, w_b
 from util import configure_logger
 from util import TipsySnapshot
-from util import worker_fullsky
+from util import worker_fullsky, worker_smallsky
 
 
 if __name__ == '__main__':
@@ -108,11 +108,6 @@ if __name__ == '__main__':
     # empty convergence map
     k_map = np.zeros(hp.nside2npix(args.hp_nside), dtype=np.float32)
 
-    settings = {
-        'randomize': args.randomize,
-        'seed': args.seed,
-    }
-
     if os.path.isfile(args.path):
         logger.info("using snapshot {}".format(args.path))
 
@@ -129,7 +124,10 @@ if __name__ == '__main__':
                  args.sim_omegal, args.sim_boxsize, args.hp_nside, args.randomize, args.seed) for batch_index in
                 range(0, args.batches)])
         elif args.lc_mode == 'smallsky':
-            raise NotImplementedError
+            pixels = pool.starmap(worker_smallsky, [
+                (snapshot, args.lc_shell_range[0], args.lc_shell_range[1], batch_index, args.batches, args.sim_omegam,
+                 args.sim_omegal, args.sim_boxsize, args.hp_nside, args.randomize, args.seed) for batch_index in
+                range(0, args.batches)])
         elif args.lc_mode == 'simple':
             raise NotImplementedError
         else:
@@ -206,7 +204,11 @@ if __name__ == '__main__':
                      args.sim_omegal, args.sim_boxsize, args.hp_nside, args.randomize, args.seed) for batch_index in
                     range(0, args.batches)])
             elif args.lc_mode == 'smallsky':
-                raise NotImplementedError
+                pixels = pool.starmap(worker_smallsky, [
+                    (snapshots[index], snapshot_bins[index], snapshot_bins[index + 1], batch_index, args.batches,
+                     args.sim_omegam,
+                     args.sim_omegal, args.sim_boxsize, args.hp_nside, args.randomize, args.seed) for batch_index in
+                    range(0, args.batches)])
             elif args.lc_mode == 'simple':
                 raise NotImplementedError
             else:
@@ -233,6 +235,18 @@ if __name__ == '__main__':
             logger.info("processed snapshot z = {0:.3f} - {1:.3f} ({2:.2f}s)".format(snapshot_bins[index],
                                                                                      snapshot_bins[index + 1],
                                                                                      time.time() - timer))
+
+    # mask map
+    if args.lc_mode == "smallsky":
+        angle = np.arcsin(args.sim_boxsize/ 2  / d_c(0, args.lc_range[1], args.sim_omegam, args.sim_omegal))
+
+        logger.info("masking pixels out of lightcone ({} deg)".format(180 * angle / np.pi))
+
+        thetas, phis = hp.pix2ang(hp.npix2nside(len(k_map)), range(0, len(k_map)))
+        thetas = np.pi / 2 - thetas
+        phis[np.where(phis > np.pi)] = 2 * np.pi - phis[np.where(phis > np.pi)]
+
+        k_map[np.where(np.sqrt(thetas ** 2 + phis ** 2) > angle)] = hp.UNSEEN
 
     np.save(args.out, k_map)
 
