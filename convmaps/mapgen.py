@@ -199,13 +199,13 @@ if __name__ == '__main__':
 
             if args.lc_mode == 'fullsky':
                 pixels = pool.starmap(worker_fullsky, [
-                    (snapshots[index], snapshot_bins[index], snapshot_bins[index + 1], batch_index, args.batches,
+                    (snapshots[index], snapshot_bins[index + 1], snapshot_bins[index], batch_index, args.batches,
                      args.sim_omegam,
                      args.sim_omegal, args.sim_boxsize, args.hp_nside, args.randomize, args.seed) for batch_index in
                     range(0, args.batches)])
             elif args.lc_mode == 'smallsky':
                 pixels = pool.starmap(worker_smallsky, [
-                    (snapshots[index], snapshot_bins[index], snapshot_bins[index + 1], batch_index, args.batches,
+                    (snapshots[index], snapshot_bins[index + 1], snapshot_bins[index], batch_index, args.batches,
                      args.sim_omegam,
                      args.sim_omegal, args.sim_boxsize, args.hp_nside, args.randomize, args.seed) for batch_index in
                     range(0, args.batches)])
