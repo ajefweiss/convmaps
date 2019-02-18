@@ -17,6 +17,7 @@ import time
 
 from util import d_c, w_b
 from util import configure_logger
+from util import ang_dist
 from util import TipsySnapshot
 from util import worker_fullsky, worker_smallsky
 
@@ -244,9 +245,8 @@ if __name__ == '__main__':
 
         thetas, phis = hp.pix2ang(hp.npix2nside(len(k_map)), range(0, len(k_map)))
         thetas = np.pi / 2 - thetas
-        phis[np.where(phis > np.pi)] = 2 * np.pi - phis[np.where(phis > np.pi)]
 
-        k_map[np.where(np.sqrt(thetas ** 2 + phis ** 2) > angle)] = hp.UNSEEN
+        k_map[np.where(ang_dist(thetas, phis) > angle)] = hp.UNSEEN
 
     np.save(args.out, k_map)
 
