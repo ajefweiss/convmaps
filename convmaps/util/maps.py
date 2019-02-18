@@ -26,4 +26,4 @@ def ang_dist(theta, phi, theta2=0, phi2=0):
         if isinstance(float(phi2), float):
             phi2 = phi2 * np.ones_like(phi)
 
-    return np.arccos(np.sin(phi) * np.sin(phi2) + np.cos(phi) * np.cos(phi2) * np.cos(theta - theta2))
+    return np.arccos(np.sin(theta) * np.sin(theta2) + np.cos(theta) * np.cos(theta2) * np.cos(phi - phi2))
