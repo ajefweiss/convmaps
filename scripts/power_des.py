@@ -49,7 +49,7 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
 
     # create worker pool
-    logger.info("starting {}".format("mappeaks.py"))
+    logger.info("starting {}".format("power_des.py"))
     pool = multiprocessing.Pool(processes=6)
 
     cl_list = []

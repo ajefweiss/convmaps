@@ -38,10 +38,10 @@ def worker_peaks(map, bin_count, bin_range):
 
     peaks = np.array(peaks)
 
-    bins = np.linspace(args.bin_range[0], args.bin_range[1], args.bins + 1)
-    counts = np.zeros(args.bins)
+    bins = np.linspace(bin_range[0], bin_range[1], bin_count + 1)
+    counts = np.zeros(bin_count)
 
-    for bin in range(0, args.bins):
+    for bin in range(0, bin_count):
         counts[bin] = np.sum((peaks > bins[bin]) & (peaks < bins[bin + 1]))
 
     counts = np.append(counts, np.sum((peaks > bins[-1])))
@@ -59,6 +59,8 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--out', nargs='?', type=str, default=None, metavar="FOLDER",
                         help="output folder")
     parser.add_argument('-f', '--force', action='store_true', help="overwrite output (skip otherwise)")
+
+    parser.add_argument('-c', '--combine', action='store_true', help="combine output files (no measurements)")
 
     # Debugging/Logging
     parser.add_argument('-d', '--debug', action='store_true', help="enable DEBUG output")
@@ -81,80 +83,107 @@ if __name__ == '__main__':
 
     logger = logging.getLogger(__name__)
 
-    # create worker pool
-    logger.info("starting {}".format("mappeaks.py"))
-    pool = multiprocessing.Pool(processes=6)
+    if args.combine:
+        logger.info("starting {} (combining)".format("peaks_des.py"))
 
-    cl_list = []
+        peaks = np.array([np.loadtxt(path) for path in args.path])
 
-    for path in args.path:
-        out_path = os.path.join(args.out, "{0}_n{1:.2f}_e{2:.2f}_s{3:.0f}_k{4:.2f}.npy".format(
-            os.path.basename(path).split('.')[0], args.galaxy_density, args.ellipticity, args.seed, args.smoothing))
+        bins_l = peaks[0, :, 0]
+        bins_r = peaks[0, :, 1]
 
-        if not args.force and os.path.isfile(out_path):
-            logger.info("skipping map {}".format(path))
-            continue
-        else:
-            logger.info("using map {}".format(path))
+        for i in range(1, len(args.path)):
+            if list(bins_l) != list(peaks[i, :, 0]) or list(bins_r) != list(peaks[i, :, 1]):
+                raise Exception("bin range does not match for all files")
 
-        # generate placeholder
-        np.save(out_path, np.array([]))
+        counts = []
 
-        timer = time.time()
+        for i in range(0, len(args.path)):
+            for j in range(0, 6):
+                counts.append(peaks[i, :, 2 + j])
 
-        k_map = np.array(np.load(path), dtype=np.float32)
+        counts = np.array(counts)
 
-        # set unique seed for each out file name
-        np.random.seed(args.seed * int(sum([ord(c) for c in out_path])))
+        mean = np.mean(counts, axis=0)
+        error = np.std(counts, axis=0)
 
-        logger.debug("generating noise")
-        k_map += np.random.normal(0, args.ellipticity / np.sqrt(
-            4 * 10800**2 / np.pi * args.galaxy_density / len(k_map)), len(k_map))
+        logger.info("combined {0} files".format(len(args.path)))
 
-        if args.smoothing > 0:
-            logger.debug("applying Gaussian beam ({} arcmin)".format(args.smoothing))
-            k_map = hp.smoothing(k_map, sigma=args.smoothing * 0.000290888, iter=1, verbose=False)
+        np.savetxt(args.out, np.vstack((bins_l, bins_r, mean, error)).T)
+    else:
+        # create worker pool
+        logger.info("starting {}".format("peaks_des.py"))
+        pool = multiprocessing.Pool(processes=6)
 
-        logger.debug("preparing maps")
+        cl_list = []
 
-        k_map1 = k_map
-        k_map2 = np.array(k_map)
-        k_map3 = np.array(k_map)
-        k_map4 = np.array(k_map)
-        k_map5 = np.array(k_map)
-        k_map6 = np.array(k_map)
+        for path in args.path:
+            out_path = os.path.join(args.out, "{0}_n{1:.2f}_e{2:.2f}_s{3:.0f}_k{4:.2f}.npy".format(
+                os.path.basename(path).split('.')[0], args.galaxy_density, args.ellipticity, args.seed, args.smoothing))
 
-        # cut out 2 surveys
-        angle = np.arccos(1 - 2500 * np.pi / 180**2)
+            if not args.force and os.path.isfile(out_path):
+                logger.info("skipping map {}".format(path))
+                continue
+            else:
+                logger.info("using map {}".format(path))
 
-        thetas, phis = hp.pix2ang(hp.npix2nside(len(k_map1)), range(0, len(k_map1)))
-        thetas = np.pi / 2 - thetas
+            # generate placeholder
+            np.save(out_path, np.array([]))
 
-        k_map1[np.where(ang_dist(thetas, phis) > angle)] = hp.UNSEEN
-        k_map2[np.where(ang_dist(thetas, phis, phi2=2 * np.pi / 4) > angle)] = hp.UNSEEN
-        k_map3[np.where(ang_dist(thetas, phis, phi2=4 * np.pi / 4) > angle)] = hp.UNSEEN
-        k_map4[np.where(ang_dist(thetas, phis, phi2=6 * np.pi / 4) > angle)] = hp.UNSEEN
-        k_map5[np.where(ang_dist(thetas, phis, theta2=np.pi / 2) > angle)] = hp.UNSEEN
-        k_map6[np.where(ang_dist(thetas, phis, theta2=-np.pi / 2) > angle)] = hp.UNSEEN
+            timer = time.time()
 
-        del thetas, phis
-        gc.collect()
+            k_map = np.array(np.load(path), dtype=np.float32)
 
-        logger.debug("counting peaks")
+            # set unique seed for each out file name
+            np.random.seed(args.seed * int(sum([ord(c) for c in out_path])))
 
-        result = pool.starmap(worker_peaks, [(m, args.bins, args.bin_range) for m in
-                                             [k_map1, k_map2, k_map3, k_map4, k_map5, k_map6]])
+            logger.debug("generating noise")
+            k_map += np.random.normal(0, args.ellipticity / np.sqrt(
+                4 * 10800**2 / np.pi * args.galaxy_density / len(k_map)), len(k_map))
 
-        logger.info("processed {0} ({1:.2f}s)".format(path, time.time() - timer))
+            if args.smoothing > 0:
+                logger.debug("applying Gaussian beam ({} arcmin)".format(args.smoothing))
+                k_map = hp.smoothing(k_map, sigma=args.smoothing * 0.000290888, iter=1, verbose=False)
 
-        np.savetxt(out_path, np.vstack((result[0][0],
-                                        result[0][1],
-                                        result[0][2],
-                                        result[1][2],
-                                        result[2][2],
-                                        result[3][2],
-                                        result[4][2],
-                                        result[5][2])).T)
+            logger.debug("preparing maps")
 
-        del k_map, k_map1, k_map2
-        gc.collect()
+            k_map1 = k_map
+            k_map2 = np.array(k_map)
+            k_map3 = np.array(k_map)
+            k_map4 = np.array(k_map)
+            k_map5 = np.array(k_map)
+            k_map6 = np.array(k_map)
+
+            # cut out 2 surveys
+            angle = np.arccos(1 - 2500 * np.pi / 180**2)
+
+            thetas, phis = hp.pix2ang(hp.npix2nside(len(k_map1)), range(0, len(k_map1)))
+            thetas = np.pi / 2 - thetas
+
+            k_map1[np.where(ang_dist(thetas, phis) > angle)] = hp.UNSEEN
+            k_map2[np.where(ang_dist(thetas, phis, phi2=2 * np.pi / 4) > angle)] = hp.UNSEEN
+            k_map3[np.where(ang_dist(thetas, phis, phi2=4 * np.pi / 4) > angle)] = hp.UNSEEN
+            k_map4[np.where(ang_dist(thetas, phis, phi2=6 * np.pi / 4) > angle)] = hp.UNSEEN
+            k_map5[np.where(ang_dist(thetas, phis, theta2=np.pi / 2) > angle)] = hp.UNSEEN
+            k_map6[np.where(ang_dist(thetas, phis, theta2=-np.pi / 2) > angle)] = hp.UNSEEN
+
+            del thetas, phis
+            gc.collect()
+
+            logger.debug("counting peaks")
+
+            result = pool.starmap(worker_peaks, [(m, args.bins, args.bin_range) for m in
+                                                 [k_map1, k_map2, k_map3, k_map4, k_map5, k_map6]])
+
+            logger.info("processed {0} ({1:.2f}s)".format(path, time.time() - timer))
+
+            np.savetxt(out_path, np.vstack((result[0][0],
+                                            result[0][1],
+                                            result[0][2],
+                                            result[1][2],
+                                            result[2][2],
+                                            result[3][2],
+                                            result[4][2],
+                                            result[5][2])).T)
+
+            del k_map, k_map1, k_map2
+            gc.collect()
