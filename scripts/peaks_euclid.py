@@ -16,7 +16,7 @@ from util import configure_logger
 from util import ang_dist
 
 
-def worker_peaks(map, bin_count, bin_range):
+def worker_peaks(map, bin_count, logbin_count, bin_range):
     logger = logging.getLogger(__name__)
 
     factor = 1 - np.sum(map == hp.UNSEEN) / len(map)
@@ -38,10 +38,17 @@ def worker_peaks(map, bin_count, bin_range):
 
     peaks = np.array(peaks)
 
-    bins = np.linspace(bin_range[0], bin_range[1], bin_count + 1)
-    counts = np.zeros(bin_count)
+    if len(bin_range) == 2:
+        bins = np.linspace(bin_range[0], bin_range[1], bin_count + 1)
+    elif len(bin_range) == 3:
+        bins = np.append(np.linspace(bin_range[0], bin_range[1], bin_count + 1)[:-1],
+                         np.logspace(np.log10(bin_range[1]), np.log10(bin_range[2]), logbin_count + 1))
+    else:
+        raise NotImplementedError
 
-    for bin in range(0, bin_count):
+    counts = np.zeros(len(bins) - 1)
+
+    for bin in range(0, len(bins) - 1):
         counts[bin] = np.sum((peaks > bins[bin]) & (peaks < bins[bin + 1]))
 
     counts = np.append(counts, np.sum((peaks > bins[-1])))
@@ -69,7 +76,9 @@ if __name__ == '__main__':
 
     # Output
     parser.add_argument('-b', '--bins', nargs='?', type=int, default=20, help="peak bins")
-    parser.add_argument('-r', '--bin-range', nargs=2, type=float, default=[0, 0.1], help="peak range")
+    parser.add_argument('--logbins', nargs='?', type=int, default=10, help="logarithmic peak bins")
+    parser.add_argument('-r', '--bin-range', nargs='+', type=float, default=[0, 0.1],
+                        help="peak range, if two ranges are given second range is binned logarithmically")
 
     # Smoothing/Noise
     parser.add_argument('-n', '--galaxy-density', nargs='?', type=float, default=30, metavar="N/ARCMIN")
@@ -163,7 +172,8 @@ if __name__ == '__main__':
 
             logger.debug("counting peaks")
 
-            result = pool.starmap(worker_peaks, [(m, args.bins, args.bin_range) for m in [k_map1, k_map2]])
+            result = pool.starmap(worker_peaks,
+                                  [(m, args.bins, args.logbins, args.bin_range) for m in [k_map1, k_map2]])
 
             logger.info("processed {0} ({1:.2f}s)".format(path, time.time() - timer))
 
